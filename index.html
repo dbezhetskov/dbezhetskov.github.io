@@ -9,11 +9,20 @@
     <div style="text-align:center;">
         <canvas id="battlefield-canvas" width="800" height="800" style="border:1px solid #000000;"></canvas>
     </div>
+    <input type="file" id="inputWasm" />
     <script src="robot-battle.js"></script>
     <script src="canvas-render.js"></script>
     <script>
-        async function initializeWasm() {
-            const fetchPromise = fetch('trivial.wasm');
+        const inputElement = document.getElementById("inputWasm");
+        inputElement.addEventListener("change", handleFile, false);
+        function handleFile() {
+            const wasmFile = this.files[0];
+            const wasmURL = window.URL.createObjectURL(wasmFile);
+            initializeWasm(wasmURL).then(main);
+        }
+
+        async function initializeWasm(wasmURL) {
+            const fetchPromise = fetch(wasmURL);
             const { instance } = await WebAssembly.instantiateStreaming(fetchPromise);
             return instance;
         }
@@ -64,8 +73,6 @@
                 render.render();
             }, speed);
         }
-
-        initializeWasm().then(main);
     </script>
 </body>
 
