@@ -1,11 +1,9 @@
 class RobotGame {
-    constructor(numRows, numColumns, firstStrategy, secondStrategy) {
+    constructor(numRows, numColumns, firstStrategy, secondStrategy, memory, offset) {
         this.firstStrategy = firstStrategy;
         this.secondStrategy = secondStrategy;
         this.sizeCellInBytes = 1;
-        this.memSize = 3;
-        this.memory = new WebAssembly.Memory({ initial: this.memSize });
-        this.field = new Field(this.memory.buffer, numRows, numColumns, this.sizeCellInBytes);
+        this.field = new Field(memory.buffer, offset, numRows, numColumns, this.sizeCellInBytes);
 
         this.gameStates = {
             "InProgress": 0,
@@ -397,11 +395,11 @@ class RobotGame {
 }
 
 class Field {
-    constructor(buffer, numRows, numColumns, sizeCellInBytes) {
+    constructor(buffer, offset, numRows, numColumns, sizeCellInBytes) {
         this.numRows = numRows;
         this.numColumns = numColumns;
         this.sizeCellInBytes = sizeCellInBytes;
-        this.field = new Uint8Array(buffer, 0, numRows * numColumns * this.sizeCellInBytes);
+        this.field = new Uint8Array(buffer, offset, numRows * numColumns * this.sizeCellInBytes);
     }
 
     getCell(row, column) {

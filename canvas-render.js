@@ -36,19 +36,19 @@ class CanvasRender {
         this.ctx.beginPath();
         this.ctx.moveTo(column * this.cellWidth + this.cellWidth / 2, row * this.cellHeight + this.cellHeight / 2);
         switch (direction) {
-            case game.cellTypes.playerLeft: {
+            case this.game.cellTypes.playerLeft: {
                 this.ctx.lineTo(column * this.cellWidth, row * this.cellHeight + this.cellHeight / 2);
                 break;
             }
-            case game.cellTypes.playerUp: {
+            case this.game.cellTypes.playerUp: {
                 this.ctx.lineTo(column * this.cellWidth + this.cellWidth / 2, row * this.cellHeight);
                 break;
             }
-            case game.cellTypes.playerRight: {
+            case this.game.cellTypes.playerRight: {
                 this.ctx.lineTo(column * this.cellWidth + this.cellWidth, row * this.cellHeight + this.cellHeight / 2);
                 break;
             }
-            case game.cellTypes.playerDown: {
+            case this.game.cellTypes.playerDown: {
                 this.ctx.lineTo(column * this.cellWidth + this.cellWidth / 2, row * this.cellHeight + this.cellHeight);
                 break;
             }

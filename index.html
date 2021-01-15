@@ -12,49 +12,60 @@
     <script src="robot-battle.js"></script>
     <script src="canvas-render.js"></script>
     <script>
-        const numRows = 20;
-        const numColumns = 20;
-        const strategyFirst = () => {
-            return Math.floor(Math.random() * (game.actions.doNothing + 1));
+        async function initializeWasm() {
+            const fetchPromise = fetch('trivial.wasm');
+            const { instance } = await WebAssembly.instantiateStreaming(fetchPromise);
+            return instance;
         }
-        const strategySecond = () => {
-            return Math.floor(Math.random() * (game.actions.doNothing + 1));
-        }
-        const game = new RobotGame(numRows, numColumns, strategyFirst, strategySecond);
-        game.setupPlayer();
-        game.setupEnemy();
 
-        const canvas = document.getElementById("battlefield-canvas");
-        const render = new CanvasRender(canvas, game);
-        render.render();
+        function main(instance) {
+            const numRows = 20;
+            const numColumns = 20;
+            const strategyFirst = () => { return game.actions.moveLeft; }
+            const strategySecond = () => { return game.actions.doNothing; }
+            const game = new RobotGame(numRows,
+                numColumns,
+                strategyFirst,
+                strategySecond,
+                instance.exports.memory,
+                instance.exports.getAddressOfData());
+            game.setupPlayer();
+            game.setupEnemy();
 
-        const speed = 500;
-        var timer = setInterval(() => {
-            let state = game.getState();
-            if (state != game.gameStates.InProgress) {
-                switch (state) {
-                    case game.gameStates.Victory: {
-                        alert("VICTORY, what a battle");
-                        break;
-                    }
-                    case game.gameStates.Defeat: {
-                        alert("DEFEAT, try again");
-                        break;
-                    }
-                    case game.gameStates.Draw: {
-                        alert("DRAW, what a mess");
-                        break;
-                    }
-                    default: {
-                        throw new Error("unknown game state");
-                    }
-                }
-                clearInterval(timer);
-                return;
-            }
-            game.doStep();
+            const canvas = document.getElementById("battlefield-canvas");
+            const render = new CanvasRender(canvas, game);
             render.render();
-        }, speed);
+
+            const speed = 500;
+            var timer = setInterval(() => {
+                let state = game.getState();
+                if (state != game.gameStates.InProgress) {
+                    switch (state) {
+                        case game.gameStates.Victory: {
+                            alert("VICTORY, what a battle");
+                            break;
+                        }
+                        case game.gameStates.Defeat: {
+                            alert("DEFEAT, try again");
+                            break;
+                        }
+                        case game.gameStates.Draw: {
+                            alert("DRAW, what a mess");
+                            break;
+                        }
+                        default: {
+                            throw new Error("unknown game state");
+                        }
+                    }
+                    clearInterval(timer);
+                    return;
+                }
+                game.doStep();
+                render.render();
+            }, speed);
+        }
+
+        initializeWasm().then(main);
     </script>
 </body>
 
