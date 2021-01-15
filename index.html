@@ -21,7 +21,7 @@
         function main(instance) {
             const numRows = 20;
             const numColumns = 20;
-            const strategyFirst = () => { return game.actions.moveLeft; }
+            const strategyFirst = () => { return instance.exports.whatToDo(); }
             const strategySecond = () => { return game.actions.doNothing; }
             const game = new RobotGame(numRows,
                 numColumns,
