@@ -39,7 +39,7 @@
                 instance.exports.memory,
                 instance.exports.getAddressOfData());
             game.setupPlayer(0, 0);
-            game.setupEnemy(numRows - 1, 3);
+            game.setupEnemy(numRows - 1, Math.floor(Math.random() * numColumns));
 
             const canvas = document.getElementById("battlefield-canvas");
             const render = new CanvasRender(canvas, game);
