@@ -1,0 +1,37 @@
+<html>
+
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+</head>
+
+<body>
+    <div style="text-align:center;">
+        <label for="name">Enter your password:</label>
+        <input type="text" id="passwd" name="name">
+        <button onclick="CheckPassword()">Check</button> 
+    </div>
+    <script>
+        const inputElement = document.getElementById("passwd");
+        function CheckPassword() {
+            initializeWasm().then(main);
+        }
+
+        async function initializeWasm() {
+            const fetchPromise = fetch("intetesting.wasm");
+            const { instance } = await WebAssembly.instantiateStreaming(fetchPromise);
+            return instance;
+        }
+
+        function main(instance) {
+            let userPassword = parseInt(inputElement.value, 10);
+            if (instance.exports.check(userPassword) == 1) {
+                alert("Good job!");
+            } else {
+                alert("Ah, don't waste my time!");
+            }
+        }
+    </script>
+</body>
+
+</html>
