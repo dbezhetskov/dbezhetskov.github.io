@@ -1,0 +1,99 @@
+<html>
+
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+</head>
+
+<body>
+    <div style="text-align:center;">
+        <canvas id="battlefield-canvas" width="800" height="800" style="border:1px solid #000000;"></canvas>
+    </div>
+    <input type="file" id="inputWasm" multiple>
+    <script src="robot-battle-multiplayer.js"></script>
+    <script src="canvas-render.js"></script>
+    <script>
+        const inputElement = document.getElementById("inputWasm");
+        inputElement.addEventListener("change", handleFile, false);
+        function handleFile() {
+            const wasmFileFirst = this.files[0];
+            const wasmFileSecond = this.files[1];
+            const wasmURLFirst = window.URL.createObjectURL(wasmFileFirst);
+            const wasmURLSecond = window.URL.createObjectURL(wasmFileSecond);
+            initializeWasm(wasmURLFirst, wasmURLSecond).then(main);
+        }
+
+        async function initializeWasm(wasmURLPlayer, wasmURLEnemy) {
+            const fetchPromisePlayer = fetch(wasmURLPlayer);
+            const fetchPromiseEnemy = fetch(wasmURLEnemy);
+            let playerInstance;
+            {
+                let { instance } = await WebAssembly.instantiateStreaming(fetchPromisePlayer);
+                playerInstance = instance;
+            }
+            let enemyInstance;
+            {
+                let { instance } = await WebAssembly.instantiateStreaming(fetchPromiseEnemy);
+                enemyInstance = instance;
+            }
+            return {
+                playerInstance: playerInstance,
+                enemyInstance: enemyInstance
+            };
+        }
+
+        function main(instances) {
+            const playerInstance = instances.playerInstance;
+            const enemyInstance = instances.playerInstance;
+
+            const numRows = 20;
+            const numColumns = 20;
+            const strategyFirst = () => { return playerInstance.exports.whatToDo(); }
+            const strategySecond = () => { return enemyInstance.exports.whatToDo(); }
+            const game = new RobotGame(numRows,
+                numColumns,
+                strategyFirst,
+                strategySecond,
+                playerInstance.exports.memory,
+                playerInstance.exports.getAddressOfData(),
+                enemyInstance.exports.memory,
+                enemyInstance.exports.getAddressOfData());
+            game.setupPlayer(0, 0);
+            game.setupEnemy(numRows - 1, Math.floor(Math.random() * numColumns));
+
+            const canvas = document.getElementById("battlefield-canvas");
+            const render = new CanvasRender(canvas, game);
+            render.render();
+
+            const speed = 500;
+            var timer = setInterval(() => {
+                let state = game.getState();
+                if (state != game.gameStates.InProgress) {
+                    switch (state) {
+                        case game.gameStates.Victory: {
+                            alert("VICTORY, what a battle");
+                            break;
+                        }
+                        case game.gameStates.Defeat: {
+                            alert("DEFEAT, try again");
+                            break;
+                        }
+                        case game.gameStates.Draw: {
+                            alert("DRAW, what a mess");
+                            break;
+                        }
+                        default: {
+                            throw new Error("unknown game state");
+                        }
+                    }
+                    clearInterval(timer);
+                    return;
+                }
+                game.doStep();
+                render.render();
+            }, speed);
+        }
+    </script>
+</body>
+
+</html>
