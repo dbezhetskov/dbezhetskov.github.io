@@ -381,12 +381,12 @@ class RobotGame {
         }
     }
 
-    setupPlayer() {
-        this.field.setCell(0, 1, this.cellTypes.playerRight);
+    setupPlayer(row, column) {
+        this.field.setCell(row, column, this.cellTypes.playerRight);
     }
 
-    setupEnemy() {
-        this.field.setCell(this.getNumRows() - 1, this.getNumColumns() - 1, this.cellTypes.enemyLeft);
+    setupEnemy(row, column) {
+        this.field.setCell(row, column, this.cellTypes.enemyLeft);
     }
 
     getCellState(row, column) { return this.field.getCell(row, column); }
