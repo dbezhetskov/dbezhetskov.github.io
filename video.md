@@ -13,7 +13,7 @@
 <video id="video-for-test" width="512" height="512" autoplay></video>
 ```
 
-- Создайте `<script>` и добавьте JS в ваш index.html и вставьте код для инициализации веб-камеры:
+- Создайте `<script>` и добавьте в него следующий JS для инициализации веб-камеры:
 ```javascript
 const constraints = { video: true };
 navigator.mediaDevices.getUserMedia(constraints)
@@ -25,11 +25,11 @@ navigator.mediaDevices.getUserMedia(constraints)
 
 ## Шаг 2. Инициализация wasm.
 Напишите на AS (assembly script) в https://webassembly.studio/ функцию, которая возвращает число 42.
-Скачайте получившийся wasm, загрузите его на вашей странице и затем инициализируйте его.
-Если забыли как загружать и компилировать wasm, то посмотрите на https://github.com/dbezhetskov/dbezhetskov.github.io/blob/master/round_1.html.
-Вызовите вашу функцию и убедитесь, что она возвращает 42.
+Скачайте получившийся `.wasm`, загрузите его на вашей странице и инициализируйте.
+Посмотрите как это сделано тут и сделайте загрузку вашего `.wasm` также - https://github.com/dbezhetskov/dbezhetskov.github.io/blob/master/round_1.html.
+Вызовите вашу wasm функцию и убедитесь, что она возвращает 42.
 
-## Шаг 3. Получите информацию о текущем кадре видео и передайте его в wasm.
+## Шаг 3. Получите информацию о текущем видео кадре и передайте его в wasm.
 - Добавьте canvas на страницу:
 ```html
 <canvas id="canvas-for-test" width="512" height="512"></canvas>
@@ -46,6 +46,24 @@ const memory = new WebAssembly.Memory({ initial: memSize, maximum: memSize });
 ```
 
 - Импортируйте память в wasm. Это делается точно также как и проброс функции из JS в wasm.
+- Cкопируйте память из видео кадра в `WebAssembly.Memory`:
+
+```javascript
+canvas.getContext('2d').drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+// FIll memory with image data from canvas
+let memoryAsArray = new Uint8ClampedArray(memory.buffer, 0, width * height * 4);
+let imageData = ctx.getImageData(0, 0, width, height).data;
+for (let i = 0; i < memoryAsArray.length; ++i) {
+  memoryAsArray[i] = imageData[i];
+}
+
+// call wasm instance.exports.YOUR_SEPIA_FUNCTION_NAME
+
+const data = new Uint8ClampedArray(memory.buffer, 0, width * height * 4);
+const img = new ImageData(data, width, height);
+ctx.putImageData(img, 0, 0);
+```
 
 ## Шаг 4.
 Напишите функцию сепии, проверьте что все работает так, как вы ожидаете и покажите преподавателю.
