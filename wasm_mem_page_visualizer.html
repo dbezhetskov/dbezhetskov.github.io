@@ -65,7 +65,7 @@
         function main(instance) {
             const memoryBuffer = instance.exports.memory.buffer;
             const kPageSize = 2 ** 16;
-            const numOfPages = memoryBuffer.byteLenght / kPageSize;
+            const numOfPages = memoryBuffer.byteLength / kPageSize;
 
             for (let pageId = 0; pageId < numOfPages; ++pageId) {
                 let pageOffset = pageId * kPageSize;
