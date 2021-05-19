@@ -7,9 +7,12 @@
 
 <body>
     <input type="file" id="input-wasm" />
-    <script src="robot-battle.js"></script>
-    <script src="canvas-render.js"></script>
+    <div style="text-align:center;">
+        <canvas id="memory-canvas" width="800" height="100" style="border:1px solid #000000;"></canvas>
+    </div>
     <script>
+        const canvasContext = document.getElementById("memory-canvas").getContext('2d');
+
         const inputElement = document.getElementById("input-wasm");
         inputElement.addEventListener("change", handleFile, false);
         function handleFile() {
@@ -49,8 +52,30 @@
             return instance;
         }
 
+        function isPageDirt(page) {
+            for (let i = 0; i < page.length; ++i) {
+                if (page[i] != 0x00) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         function main(instance) {
-            console.log(instance.exports.memory);
+            const memoryBuffer = instance.exports.memory.buffer;
+            const kPageSize = 2 ** 16;
+            const numOfPages = memoryBuffer.byteLenght / kPageSize;
+
+            for (let pageId = 0; pageId < numOfPages; ++pageId) {
+                let pageOffset = pageId * kPageSize;
+                let page = new Uint8Array(memoryBuffer, pageOffset, kPageSize);
+                if (isPageDirt(page)) {
+                    console.log(1);
+                } else {
+                    console.log(0);
+                }
+            }
         }
     </script>
 </body>
