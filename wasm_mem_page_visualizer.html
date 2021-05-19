@@ -70,7 +70,7 @@
             const widthOfLine = canvas.width / numOfPages;
 
             return {
-                drawLine: (index, isDirt) => {
+                drawPage: (index, isDirt) => {
                     ctx.fillStyle = 'green';
                     if (isDirt) {
                         ctx.fillStyle = 'red';
@@ -89,7 +89,7 @@
             for (let pageId = 0; pageId < numOfPages; ++pageId) {
                 let pageOffset = pageId * kPageSize;
                 let page = new Uint8Array(memoryBuffer, pageOffset, kPageSize);
-                graphics.drawLine(pageId, isPageDirt(page));
+                graphics.drawPage(pageId, isPageDirt(page));
             }
         }
     </script>
