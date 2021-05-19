@@ -20,7 +20,7 @@
 
         async function initializeWasm(wasmURL) {
             const fetchPromise = fetch(wasmURL);
-            const { instance } = await WebAssembly.instantiateStreaming(fetchPromise);
+            const { instance } = await WebAssembly.instantiateStreaming(fetchPromise, {});
             return instance;
         }
 
