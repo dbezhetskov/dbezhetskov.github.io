@@ -7,14 +7,11 @@
 
 <body>
     <input type="file" id="input-wasm" />
-    <div style="text-align:center;">
-        <canvas id="memory-canvas" width="800" height="100" style="border:1px solid #000000;"></canvas>
-    </div>
+    <div id="memory-canvas-container" style="text-align:center;"></div>
     <script>
-        const canvasContext = document.getElementById("memory-canvas").getContext('2d');
-
         const inputElement = document.getElementById("input-wasm");
         inputElement.addEventListener("change", handleFile, false);
+
         function handleFile() {
             const wasmFile = this.files[0];
             const wasmURL = window.URL.createObjectURL(wasmFile);
@@ -62,19 +59,37 @@
             return true;
         }
 
+        function initializeGraphics(numOfPages) {
+            const canvasContainer = document.getElementById("memory-canvas-container")
+            canvasContainer.textContent = '';
+            let canvas = document.createElement('canvas');
+            canvas.width = 800;
+            canvas.height = 100;
+            canvasContainer.appendChild(canvas);
+            const ctx = canvas.getContext('2d');
+            const widthOfLine = canvas.width / numOfPages;
+
+            return {
+                drawLine: (index, isDirt) => {
+                    ctx.fillStyle = 'green';
+                    if (isDirt) {
+                        ctx.fillStyle = 'red';
+                    }
+                    ctx.fillRect(index * numOfPages, 0, widthOfLine, 100);
+                }
+            };
+        }
+
         function main(instance) {
             const memoryBuffer = instance.exports.memory.buffer;
             const kPageSize = 2 ** 16;
             const numOfPages = memoryBuffer.byteLength / kPageSize;
 
+            let graphics = initializeGraphics(numOfPages);
             for (let pageId = 0; pageId < numOfPages; ++pageId) {
                 let pageOffset = pageId * kPageSize;
                 let page = new Uint8Array(memoryBuffer, pageOffset, kPageSize);
-                if (isPageDirt(page)) {
-                    console.log(1);
-                } else {
-                    console.log(0);
-                }
+                graphics.drawLine(pageId, isPageDirt(page));
             }
         }
     </script>
