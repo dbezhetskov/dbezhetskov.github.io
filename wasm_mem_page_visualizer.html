@@ -22,27 +22,27 @@
             const fetchPromise = fetch(wasmURL);
             const imports = {
                 wasi_snapshot_preview1: {
-                    proc_exit: console.log(),
-                    fd_write: console.log(),
-                    clock_time_get: console.log(),
-                    clock_res_get: console.log(),
-                    fd_filestat_get: console.log(),
-                    fd_readdir: console.log(),
-                    fd_close: console.log(),
-                    fd_write: console.log(),
-                    fd_seek: console.log(),
-                    fd_read: console.log(),
-                    fd_fdstat_get: console.log(),
-                    path_open: console.log(),
-                    path_unlink_file: console.log(),
-                    path_remove_directory: console.log(),
-                    environ_sizes_get: console.log(),
-                    environ_get: console.log(),
-                    args_sizes_get: console.log(),
-                    args_get: console.log(),
-                    fd_prestat_get: console.log(),
-                    fd_prestat_dir_name: console.log(),
-                    fd_fdstat_set_flags: console.log()
+                    proc_exit: console.log,
+                    fd_write: console.log,
+                    clock_time_get: console.log,
+                    clock_res_get: console.log,
+                    fd_filestat_get: console.log,
+                    fd_readdir: console.log,
+                    fd_close: console.log,
+                    fd_write: console.log,
+                    fd_seek: console.log,
+                    fd_read: console.log,
+                    fd_fdstat_get: console.log,
+                    path_open: console.log,
+                    path_unlink_file: console.log,
+                    path_remove_directory: console.log,
+                    environ_sizes_get: console.log,
+                    environ_get: console.log,
+                    args_sizes_get: console.log,
+                    args_get: console.log,
+                    fd_prestat_get: console.log,
+                    fd_prestat_dir_name: console.log,
+                    fd_fdstat_set_flags: console.log
                 }
             };
             const { instance } = await WebAssembly.instantiateStreaming(fetchPromise, imports);
