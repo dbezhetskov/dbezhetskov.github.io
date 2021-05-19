@@ -1,0 +1,33 @@
+<html>
+
+<head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+</head>
+
+<body>
+    <input type="file" id="input-wasm"/>
+    <script src="robot-battle.js"></script>
+    <script src="canvas-render.js"></script>
+    <script>
+        const inputElement = document.getElementById("input-wasm");
+        inputElement.addEventListener("change", handleFile, false);
+        function handleFile() {
+            const wasmFile = this.files[0];
+            const wasmURL = window.URL.createObjectURL(wasmFile);
+            initializeWasm(wasmURL).then(main);
+        }
+
+        async function initializeWasm(wasmURL) {
+            const fetchPromise = fetch(wasmURL);
+            const { instance } = await WebAssembly.instantiateStreaming(fetchPromise);
+            return instance;
+        }
+
+        function main(instance) {
+            console.log(instance.exports.memory);
+        }
+    </script>
+</body>
+
+</html>
