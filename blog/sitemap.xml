@@ -17,10 +17,10 @@
         <loc>https://dbezhetskov.dev/blog/blog/page/1/</loc>
     </url>
     <url>
-        <loc>https://dbezhetskov.dev/blog/hello-world/</loc>
-        <lastmod>2021-05-01T11:11:00+00:00</lastmod>
+        <loc>https://dbezhetskov.dev/blog/page/1/</loc>
     </url>
     <url>
-        <loc>https://dbezhetskov.dev/blog/page/1/</loc>
+        <loc>https://dbezhetskov.dev/blog/spidermonkey-wasi/</loc>
+        <lastmod>2021-08-01T11:11:00+00:00</lastmod>
     </url>
 </urlset>

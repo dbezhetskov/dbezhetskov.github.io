@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  
+<title>Adventures in porting SpiderMonkey to the WASI WebAssembly platform | Dmitry Bezhetskov</title>
+
+
+
+<meta property="og:title" content="Adventures in porting SpiderMonkey to the WASI WebAssembly platform">
+
+
+
+<meta name="author" content="Dmitry Bezhetskov">
+
+
+<meta property="og:locale" content="en_US">
+
+
+
+
+<link rel="canonical" href="https://dbezhetskov.dev/blog/spidermonkey-wasi/">
+<meta property="og:url" content="https://dbezhetskov.dev/blog/spidermonkey-wasi/">
+
+
+
+<meta property="og:site_name" content="Dmitry Bezhetskov" />
+
+
+
+  <meta property="og:image" content="https://dbezhetskov.dev/blog/tale.png">
+  
+  
+
+
+
+  <meta property="og:type" content="article" />
+  <meta property="article:published_time" content="2021-08-01T11:11:00+00:00">
+
+
+
+
+
+
+
+  <meta name="twitter:card" content="summary_large_image"">
+  <meta property="twitter:image" content="https://dbezhetskov.dev/blog/tale.png">
+
+
+
+  <meta property="twitter:title" content="Adventures in porting SpiderMonkey to the WASI WebAssembly platform">
+
+
+
+
+
+
+
+
+<script type="application/ld+json">
+{
+  "author": {
+    "@type":"Person",
+	  "name":"Dmitry Bezhetskov",
+  },
+  "description": "",
+  "url": "https://dbezhetskov.dev/blog/spidermonkey-wasi/",
+  "@context":"https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Adventures in porting SpiderMonkey to the WASI WebAssembly platform"
+  
+    
+    
+      "datePublished":"2021-08-01T11:11:00+00:00",
+    
+    "mainEntityOfPage":{
+      "@type":"WebPage",
+      "@id":"https://dbezhetskov.dev/blog/spidermonkey-wasi/"
+    },
+  
+}
+</script>
+
+  <link rel="stylesheet" href="https://dbezhetskov.dev/blog/main.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="https://dbezhetskov.dev/blog/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://dbezhetskov.dev/blog/assets/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://dbezhetskov.dev/blog/assets/apple-touch-icon.png">
+
+  
+
+  
+
+  
+  
+</head>
+
+<body>
+  
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="https://dbezhetskov.dev/blog">
+        <h2 class="nav-title">Dmitry Bezhetskov</h2>
+      </a>
+      <ul>
+        
+          
+            <li><a href="https://dbezhetskov.dev/blog">Posts</a></li>
+          
+            <li><a href="https://dbezhetskov.dev/blog/about">About</a></li>
+          
+        
+      </ul>
+    </div>
+  </nav>
+  
+
+  <main>
+    
+  <div class="post">
+  	<h1 class="post-title">Adventures in porting SpiderMonkey to the WASI WebAssembly platform</h1>
+  	<div class="post-line"></div>
+  	<p>Hello hackers, today we are about to go on a trip into the world of C++ and WebAssembly. Recently I have been lucky enough to participate in porting such a big and complex codebase as SpiderMonkey to the WASI platform. I want to share with you some of that experience. </p>
+<span id="continue-reading"></span>
+<p>If you aren’t familiar with WebAssembly, please read this <a href="https://webassembly.org/docs/faq/">documentation</a> about it first.</p>
+<h2 id="introduction">Introduction</h2>
+<p>SpiderMonkey is a JavaScript engine written in C++. It compiles and executes JavaScript source code in the Firefox browser and other products. One of the first mentions about SpiderMonkey is from 1996, and so, it is a really old solid codebase. It is so old, so you can even find a <a href="https://searchfox.org/mozilla-central/source/js/src/editline/editline.c#148">declaration of C functions in Kernighan &amp; Ritchie Style.</a></p>
+<p>You can ask yourself - why would someone want such a big and industrial-ready JavaScript engine as a <code>.wasm</code> module? You can read about that in <a href="https://bytecodealliance.org/articles/making-javascript-run-fast-on-webassembly">an article by Lin Clark on the Bytecode Alliance blog</a>. In this post, we will discuss mostly the technical aspects of getting SpiderMonkey to compile and run on this platform. BTW, all bugs and all patches are open, so don’t hesitate to inspect this <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1701197">bug</a>.</p>
+<p>This work was a collaboration between <a href="http://igalia.com">Igalia</a>, <a href="http://fastly.com">Fastly</a> and <a href="https://www.mozilla.org/">Mozilla</a>; Fastly’s Chris Fallin produced the first prototype and Igalia engineers helped in getting it upstream.</p>
+<h2 id="instruments-and-restrictions">Instruments and restrictions</h2>
+<p>SpiderMonkey can JIT-compile JavaScript code, but with WebAssembly we can’t just generate fresh code at run-time and then run it, at least not without generating a separate WebAssembly module and instantiating it. Therefore our first port of SpiderMonkey just includes the JavaScript interpreter written in C++.</p>
+<p>There are two options for compiling C++ to WASI: using emscripten or using clang directly. Emscripten is the best choice when you are targeting a web browser, but that’s not the case here -- we are just targeting WASI, which defines its own standard library. Therefore we can just use upstream clang as the compiler, and then link the result to the WASI C library. An advantage of this approach is that we minimize the size of the resulting <code>.wasm</code> file, while still allowing the result to run in a browser.</p>
+<p>Though you can just use upstream clang, invoking the compiler with <code>--target=wasm32-unknown-wasi</code>, it’s easier to use the compiler from the <a href="https://github.com/WebAssembly/wasi-sdk/">WASI SDK</a>. We added a new cpu target in SpiderMonkey’s build system <code>cpu = wasm32</code>, and also added additional parameters to clang <code>--target=wasm32-unknown-wasi --sysroot=wasi-sysroot</code> and run the build. Of course, with only that change, nothing is working. We received many compilation errors about missing headers files for <code>&lt;thread&gt;</code> and <code>&lt;signal.h&gt;</code>, and some missing functions from <code>&lt;unistd.h&gt;</code>. Our journey had just begun...</p>
+<h2 id="missing-syscall-functionality">Missing syscall functionality</h2>
+<p>WASI is in its early stage and some functionality can be missing. For example, SpiderMonkey uses the missing <code>getpid()</code> function and this is our first compilation error. <code>Getpid()</code> returns identificator of the current running process, and since we have only one process in the wasm, so we can just replace this function with a stub - <a href="https://phabricator.services.mozilla.com/D110070">https://phabricator.services.mozilla.com/D110070</a>.</p>
+<h2 id="threads-and-signals">Threads and signals</h2>
+<p>Run build again and parse new error messages. This time it is missing support for <code>&lt;thread&gt;</code> and <code>&lt;signal.h&gt;</code>. Unfortunately WASI doesn’t support threads yet, but there is some work to support <a href="https://github.com/WebAssembly/wasi-sdk/issues/5">it</a>. To handle this error we configured SpiderMonkey to use only one thread, and wrote a simple stub realization of <code>std::thread</code> and <code>std::atomic</code> to pass the compilation <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1701613">https://bugzilla.mozilla.org/show_bug.cgi?id=1701613</a>, <a href="https://phabricator.services.mozilla.com/D110215">https://phabricator.services.mozilla.com/D110215</a>.</p>
+<p>With signal handling we can use the same approach. We just cut off all functionality that won’t work without signals <a href="https://phabricator.services.mozilla.com/D110216">https://phabricator.services.mozilla.com/D110216</a>. Luckily, SpiderMonkey in interpreter only mode can work without any signal support. It is funny but the WebAssembly execution engine in SpiderMonkey uses signals, so it was disabled. So, for now at least, the SpiderMonkey built on top of WebAssembly won’t be able to run WebAssembly itself.</p>
+<h2 id="memory-stuff">Memory stuff</h2>
+<p>Run the build again and get an error about missing <code>mmap</code> in WASI. Well, if <code>mmap</code> isn’t supported yet we can use <code>malloc</code> which is supported in WASI. It works but it’s needed to align the chunk size each time because <code>mmap</code> returns aligned on the page size pointer. Actually, even without alignment everything is working well, but there might be some code in SpiderMonkey that asserts alignment and we are just lucky enough to not run into it yet. So, <code>malloc</code> was replaced with <code>posix_memalign</code> which ideally suits for our purposes - <a href="https://phabricator.services.mozilla.com/D110075">https://phabricator.services.mozilla.com/D110075</a>. The <a href="https://github.com/WebAssembly/wasi-libc/blob/main/dlmalloc/src/malloc.c#L5335">dlmalloc WASI allocator</a> has optimized support for posix_memalign, so this is a fine solution.</p>
+<h2 id="rust">Rust</h2>
+<p>With all our hacks compilation passed. Yay! But the linker found some errors, of course. It turns out that SpiderMonkey uses components implemented in Rust and one of these components exports the symbol <code>exit</code>, but libc from WASI SDK also exports this symbol and so, the link failed. I tried to cut off all Rust components but it is really hard because there are a lot of places where it is used. Luckily, in the new version of the WASI SDK 12 <code>exit</code> symbol was renamed and so, to tackle this error I just updated the SDK. Now compilation and linking has passed.</p>
+<h2 id="over-recursion-emulated-c-stack">Over-recursion: emulated C++ stack</h2>
+<p>If we run SpiderMonkey’s’s test suite via <a href="https://github.com/bytecodealliance/wasmtime">wasmtime</a> we found out that tests which check recursion exceeding fail. Let’s find out why. When we execute the final WebAssembly module we have two stacks instead of one as we have in native C++. The first stack is a stack of WebAssembly itself and it is used to store local variables, function frames of WebAssembly itself. The second stack is an emulated C++ stack which is just an address in WebAssembly.Memory. Host should handle overflow of the WebAssembly stack and we should handle overflows of the C++ emulated stack ourselves. Memory layout inside WebAssembly.Memory will look like the memory layout for the usual native program:</p>
+<p><img src="/blog/spidermonkey_wasi/memory_layout_before.png" alt="wasi memory layout" /></p>
+<p>You can read about why it looks like this in <a href="https://www.usenix.org/conference/usenixsecurity20/presentation/lehmann">Everything Old is New Again: Binary Security of WebAssembly, Figure 4</a>.</p>
+<p>Let’s deal with the emulated stack in linear memory first.
+We want to check both limits of the stack - the higher one and the low one. To achieve this we change memory layout so that the stack is placed in the very beginning, so the host can check for overflows.</p>
+<p><img src="/blog/spidermonkey_wasi/memory_layout_after.png" alt="final memory layout" /></p>
+<p>SpiderMonkey in turn will check underflows from the other side via Stack Base that is equal to the size of the stack.</p>
+<h2 id="over-recursion-handle-webassembly-stack-pointer">Over-recursion: handle WebAssembly stack pointer</h2>
+<p>Some C++ functions that implement JavaScript API may not touch any linear memory and may have very deep nesting. For example this trivial C++ function won’t use any emulated stack at all:</p>
+<pre data-lang="cpp" class="language-cpp "><code class="language-cpp" data-lang="cpp">int foo(int a, int b) {
+   return a + b;
+}
+</code></pre>
+<pre data-lang="cpp" class="language-cpp "><code class="language-cpp" data-lang="cpp">foo(int, int):
+       local.get       1
+       local.get       0
+       i32.add
+       end_function
+</code></pre>
+<p>So, some of SpiderMonkey’s functions that implements Javascript API, for example Regexp, may not use and not fully use the emulated in linear memory stack pointer, but we want to handle over-recursion for this type of function too. Thus a manual RAII based autorecursion limiter was added - <a href="https://phabricator.services.mozilla.com/D111813">https://phabricator.services.mozilla.com/D111813</a>. Objects of this class count how many times we have entered into a particular C++ function and will report over-recursion when we reach the predefined limit.</p>
+<h2 id="ci-build">CI Build</h2>
+<p>After all our exercises and workarounds, SpiderMonkey.wasm passed all tests and kind people from Mozilla agreed to setup CI build to check if something went wrong- <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1710358">https://bugzilla.mozilla.org/show_bug.cgi?id=1710358</a>. At the moment of writing the build is green and the WASI target is considered to be a <a href="https://firefox-source-docs.mozilla.org/contributing/build/supported.html#tier-2-targets">Tier 2 platform</a> for upstream SpiderMonkey.</p>
+<h2 id="online-demo">Online demo</h2>
+<p>Just for fun I used <code>SpiderMonkey.wasm</code> in the browser with WASI polyfill provided by wasmer: <a href="https://dbezhetskov.dev/flying_monkey/">online demo</a>. It is a personal and extremely experimental version that allows you to run JavaScript scripts in the browser. Of course, there has never been such a thing...</p>
+<h2 id="conclusion">Conclusion</h2>
+<p>Webassembly becomes a jack to bring native apps on the web and I think that this is very good. Tools are improving and on the SpiderMonkey example we see that even very large, complex software can be run via WebAssembly. Here is just a small nostalgic selection of what Webassembly has already allowed you to run: <a href="https://wasm.continuation-labs.com/d3demo/">Doom3</a>,  <a href="https://binji.github.io/posts/pokegb/">Pokemon Blue</a>, <a href="https://news.ycombinator.com/item?id=25687261">Baldur's gate 2</a>, <a href="https://web-games.itch.io/spyfoxindrycereal">Spy fox</a> and <a href="https://madewithwebassembly.com/showcase/diabloweb/">Diablo 1</a>. No need to install, no need to configure or something like this - just click the link and get fun. Yep, the porting process can be annoying but WASI evolves with time and the process becomes easier. As for me, bringing tools to the web that simplify work, do not require installation and updates, and even save time on deployment and work on everything that has a browser is a good thing.</p>
+<h2 id="special-thanks">Special thanks</h2>
+<p>I want to say thanks to my college Andy Wingo who helped me with this post and with all this stuff. Thanks Andy! Also, check his <a href="https://wingolog.org">amazing blog</a>.</p>
+<p>Also, I want to say thank to <a href="https://github.com/jandem">Jan de Mooij</a> who patiently reviews all our patches, thanks.</p>
+<p>Thanks for reading.</p>
+
+  </div>
+
+	
+
+  <div class="pagination">
+  	
+		<a href="#" class="top">Top</a>
+		
+  </div>
+
+  </main>
+</body>
+</html>
