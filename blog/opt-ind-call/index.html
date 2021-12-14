@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  
+<title>Optimization of Wasm’s indirect calls for SpiderMonkey | Dmitry Bezhetskov</title>
+
+
+
+<meta property="og:title" content="Optimization of Wasm’s indirect calls for SpiderMonkey">
+
+
+
+<meta name="author" content="Dmitry Bezhetskov">
+
+
+<meta property="og:locale" content="en_US">
+
+
+
+
+<link rel="canonical" href="https://dbezhetskov.dev/blog/opt-ind-call/">
+<meta property="og:url" content="https://dbezhetskov.dev/blog/opt-ind-call/">
+
+
+
+<meta property="og:site_name" content="Dmitry Bezhetskov" />
+
+
+
+  <meta property="og:image" content="https://dbezhetskov.dev/blog/tale.png">
+  
+  
+
+
+
+  <meta property="og:type" content="article" />
+  <meta property="article:published_time" content="2021-12-13T11:11:00+00:00">
+
+
+
+  <link rel="prev" href="https://dbezhetskov.dev/blog/spidermonkey-wasi/">
+
+
+
+
+
+  <meta name="twitter:card" content="summary_large_image"">
+  <meta property="twitter:image" content="https://dbezhetskov.dev/blog/tale.png">
+
+
+
+  <meta property="twitter:title" content="Optimization of Wasm’s indirect calls for SpiderMonkey">
+
+
+
+
+
+
+
+
+<script type="application/ld+json">
+{
+  "author": {
+    "@type":"Person",
+	  "name":"Dmitry Bezhetskov",
+  },
+  "description": "",
+  "url": "https://dbezhetskov.dev/blog/opt-ind-call/",
+  "@context":"https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Optimization of Wasm’s indirect calls for SpiderMonkey"
+  
+    
+    
+      "datePublished":"2021-12-13T11:11:00+00:00",
+    
+    "mainEntityOfPage":{
+      "@type":"WebPage",
+      "@id":"https://dbezhetskov.dev/blog/opt-ind-call/"
+    },
+  
+}
+</script>
+
+  <link rel="stylesheet" href="https://dbezhetskov.dev/blog/main.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="https://dbezhetskov.dev/blog/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://dbezhetskov.dev/blog/assets/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://dbezhetskov.dev/blog/assets/apple-touch-icon.png">
+
+  
+
+  
+
+  
+  
+</head>
+
+<body>
+  
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="https://dbezhetskov.dev/blog">
+        <h2 class="nav-title">Dmitry Bezhetskov</h2>
+      </a>
+      <ul>
+        
+          
+            <li><a href="https://dbezhetskov.dev/blog">Posts</a></li>
+          
+            <li><a href="https://dbezhetskov.dev/blog/about">About</a></li>
+          
+        
+      </ul>
+    </div>
+  </nav>
+  
+
+  <main>
+    
+  <div class="post">
+  	<h1 class="post-title">Optimization of Wasm’s indirect calls for SpiderMonkey</h1>
+  	<div class="post-line"></div>
+  	<p>Hello hackers, part of last year and part of this year I was working on some cool optimization for Wasm <em>call_indirect</em> instruction in SpiderMonkey and recently it was finally landed. So, grab some food and let me share this story with you.</p>
+<span id="continue-reading"></span>
+<p>Links: <a href="https://spidermonkey.dev/">SpiderMonkey</a>, <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1639153">the bug</a></p>
+<h2 id="introduction">Introduction</h2>
+<p>As you already may know there is <em>call_indirect</em> instruction in Wasm which takes two immediates <em>table_index</em> and <em>type_index</em>, one <em>function_index</em> operand and calls a function indirectly through a given table and given function index. The function at <em>tables[table_index][function_index]</em> is checked against <em>types[type_index]</em> type and the call is aborted with a trap if it does not match.</p>
+<p>Let’s see the usage of <em>call_indirect</em> for simple c++ code compiled to wasm via llvm:</p>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span style="color:#877611;">class </span><span style="color:#a15001;">Base </span><span>{
+</span><span style="color:#014a69;">public</span><span>:
+</span><span>    </span><span style="color:#014a69;">virtual </span><span style="color:#877611;">int </span><span style="color:#a15001;">foo</span><span>() { </span><span style="color:#016692;">return </span><span style="color:#8c008a;">1</span><span>; }
+</span><span>};
+</span><span>
+</span><span style="color:#877611;">class </span><span style="color:#a15001;">Derived </span><span>: </span><span style="color:#014a69;">public </span><span style="font-style:italic;color:#d19264;">Base </span><span>{
+</span><span style="color:#014a69;">public</span><span>:
+</span><span>    </span><span style="color:#877611;">int </span><span style="color:#a15001;">foo</span><span>() </span><span style="color:#014a69;">override </span><span>{ </span><span style="color:#016692;">return </span><span style="color:#8c008a;">2</span><span>; }
+</span><span>};
+</span><span>
+</span><span style="color:#877611;">int </span><span style="color:#a15001;">Bar</span><span>(Base</span><span style="color:#016692;">* </span><span style="color:#696989;">base</span><span>) {
+</span><span>    </span><span style="color:#016692;">return</span><span> base-&gt;</span><span style="color:#696989;">foo</span><span>();
+</span><span>}
+</span></code></pre>
+<p>Here we have <code>Bar</code> function that will be compiled into the following <a href="https://godbolt.org/z/G64a5eW8v">wat code</a>:</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#010101;" class="language-rust "><code class="language-rust" data-lang="rust"><span>Bar(Base</span><span style="color:#016692;">*</span><span>):           </span><span style="color:#016692;"># @</span><span>Bar(Base</span><span style="color:#016692;">*</span><span>)
+</span><span>      local.get       </span><span style="color:#8c008a;">0    </span><span style="color:#898989;">// push this
+</span><span>      local.get       </span><span style="color:#8c008a;">0    </span><span style="color:#898989;">// push this again
+</span><span>      </span><span style="color:#877611;">i32</span><span>.load        </span><span style="color:#8c008a;">0    </span><span style="color:#898989;">// load dispatch table and consume one this
+</span><span>      </span><span style="color:#877611;">i32</span><span>.load        </span><span style="color:#8c008a;">0    </span><span style="color:#898989;">// load index of foo and consume dispatch table
+</span><span>      call_indirect   (</span><span style="color:#877611;">i32</span><span>) -&gt; (</span><span style="color:#877611;">i32</span><span>) </span><span style="color:#898989;">// call by index and consume this
+</span><span>      end_function
+</span></code></pre>
+<p>We emit a simple virtual call because c++ compiler can’t inline or devirtualize this function and we are using <em>call_indirect</em> instruction because this is the only way in the current Wasm spec to implement indirect calls. Moreover, we have to use the same code when we are calling functions through pointers in C language.</p>
+<p>You may think that you should avoid such indirection in your production wasm modules because of performance concerns and you are right! But, sometimes you have to use some existing C or C++ or Rust libraries which use indirection.</p>
+<p>Also, you may ask how many functions are called through the <em>call_indirect</em> instruction in the wild Internet? So, <a href="https://www.usenix.org/conference/usenixsecurity20/presentation/lehmann">Everything Old is New Again: Binary Security of WebAssembly, Table 2</a> tells us that on average <code>49.2%</code> of all Wasm functions are called indirectly in the article's program corpus.</p>
+<h2 id="conservative-approach">Conservative approach</h2>
+<p>Let’s dive in and see how <em>call_indirect</em> is implemented in SpiderMonkey. So, the following pseudocode describes the real binary code which SpiderMonkey JIT compilers generate for <em>call_indirect</em> instruction:</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#010101;" class="language-rust "><code class="language-rust" data-lang="rust"><span>elem </span><span style="color:#016692;">=</span><span> table[index]
+</span><span style="color:#7a7025;">preserve_current_state</span><span>()
+</span><span>test elem.code_ptr against null
+</span><span style="color:#7a7025;">switch_current_state</span><span>(elem.instance)
+</span><span>call elem.code_ptr
+</span><span style="color:#7a7025;">restore_current_state</span><span>()
+</span></code></pre>
+<p>Since tables in WebAssembly can be populated with imported functions from JS or imported functions from other wasm instances or it can be local functions from the current instance and since we call all these functions indirectly via runtime provided index we have to emit such conservative code.</p>
+<p>Is it slow? Well, yes, for example <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1340235">asm.js did a better job for this</a>. It is slow because preserving the current state and restoring it eats precious ticks of the processor. You may ask what is actually the state of running Wasm code? Each Wasm instance has its own pointers into its memories, tables and etc, these all together make the current state of running wasm code and when we need to call, for example, a function from a different wasm instance we have to emit a roundtrip switch for states.</p>
+<h2 id="idea-of-optimization">Idea of optimization</h2>
+<p>Lets see more at our c++ example again, but this time let’s see the text of the whole wat module:</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#010101;" class="language-rust "><code class="language-rust" data-lang="rust"><span>(module
+</span><span>  (</span><span style="color:#877611;">type </span><span style="color:#696989;">$t0 </span><span>(func (param </span><span style="color:#877611;">i32</span><span>)))
+</span><span>  (</span><span style="color:#877611;">type </span><span style="color:#696989;">$t1 </span><span>(func (param </span><span style="color:#877611;">i32</span><span>) (result </span><span style="color:#877611;">i32</span><span>)))
+</span><span>  (table </span><span style="color:#8c008a;">1 1</span><span> funcref)
+</span><span>  (elem (table </span><span style="color:#8c008a;">0</span><span>) (</span><span style="color:#877611;">i32</span><span>.</span><span style="color:#877611;">const </span><span style="color:#8c008a;">1</span><span>) func </span><span style="color:#696989;">$Bar </span><span style="color:#016692;">...</span><span>)
+</span><span>  (memory </span><span style="color:#8c008a;">2</span><span>)
+</span><span>  ;; exports, imports, data sections, other functions definitions etc.
+</span><span>
+</span><span>  ;; Bar function
+</span><span>  (func </span><span style="color:#696989;">$Bar </span><span>(</span><span style="color:#877611;">type </span><span style="color:#696989;">$t0</span><span>)
+</span><span>    local.get </span><span style="color:#8c008a;">0
+</span><span>    local.get </span><span style="color:#8c008a;">0
+</span><span>    </span><span style="color:#877611;">i32</span><span>.load </span><span style="color:#8c008a;">0
+</span><span>    </span><span style="color:#877611;">i32</span><span>.load </span><span style="color:#8c008a;">0
+</span><span>    call_indirect </span><span style="color:#696989;">$t1
+</span><span>    end_function
+</span><span>  )
+</span><span>)
+</span></code></pre>
+<p>The main observation here is that function <code>Bar</code> is actually a local function and we don’t need to be conservative and switch states. Moreover, by my subjective empirical observation almost all wasm applications today are single module applications. So, in many cases we can do less work because we are calling local functions. So, for our example above we can use a simplified version of code:</p>
+<pre data-lang="rust" style="background-color:#ffffff;color:#010101;" class="language-rust "><code class="language-rust" data-lang="rust"><span>elem </span><span style="color:#016692;">=</span><span> table[index]
+</span><span>test elem.code_ptr against null
+</span><span>call elem.code_ptr
+</span></code></pre>
+<p>Much better, isn’t it? In general if the table isn’t exported or imported and we are calling a local function then we could use the simplified scheme. But how do we know at runtime that we are going to call a local function or an external one? We can’t just insert ifs and spoil our straightforward code for the local case.</p>
+<h2 id="uniform-representation-for-call-indirect-and-decorators">Uniform representation for <em>call_indirect</em> and decorators</h2>
+<p>To achieve the desired code we can’t emit more assembly instructions at the call site and so, the only way to do this is to modify the functions that we are calling. Here decorators come. So, instead of calling function Bar we will call a new function <code>Decorator(Bar)</code> that will change the state on callee behalf and call the original function.</p>
+<p><img src="/blog/opt_ind_call/decorator_1.jpg" alt="conservative approach vs decorators" /></p>
+<p>The remaining piece of puzzle is when we should decorate our functions? Well, there is only one perfect time to do this - when we are initializing tables. More precisely, when we are populating a table with given functions we know all the information. We know what is the source of the function and whether it is imported or not and so, we can create these decorators at instantiate time and then replace table entries from pointers to functions to pointers to decorators.</p>
+<p><img src="/blog/opt_ind_call/decorator_2.jpg" alt="table and decorators" /></p>
+<p>In the current scheme we actually introduced one interstitial jump to the decorator and so we made call_indirect actually slower than it was before. But, thankfully to our observation in the previous paragraph we can replace pointer to decorator with pointer to raw function’s code if we know that this function is local and the table is private. You can see in the picture above that Bar isn’t decorated because it is local. Our scheme for local case will look like this:</p>
+<p><img src="/blog/opt_ind_call/decorator_3.jpg" alt="conservative approach vs decorators + opt" /></p>
+<p>And this is actually what we want - for local functions we don’t need to pay for any switching. Of course, this approach will slow down the cross-instance calls but, as I said previously, call_indirect of local functions are a really frequent case for current wasm state.</p>
+<h2 id="results">Results</h2>
+<p>Let’s do some measurements, but first let me introduce you with the micro benchmarks. We are going to measure the total amount of time that call_indirect will take for a local target and for an external one. Target functions are intentionally made simple not to introduce unnecessary delays. The benchmark can be found <a href="https://bugzilla.mozilla.org/attachment.cgi?id=9159323">here</a>. JFYI, the results have been obtained via not very modern core i7 laptop with 16Gb of RAM.</p>
+<p><img src="/blog/opt_ind_call/results.jpg" alt="results" /></p>
+<p>So, the main point here is that external calls become slower <code>+18%</code> because of the interstitial jump to the decorator but internal calls become much faster <code>-30%</code>. A good tradeoff, isn’t it?</p>
+<p>Of course this is an artificial benchmark and the actual speedup will depend on how many indirect calls you do on your hot paths, but in the <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1639153#c156">bug</a> you can see that <code>wasm-godot-baseline</code> gets a <code>2%</code> boost already.</p>
+<h2 id="special-thanks-section">Special thanks section</h2>
+<p>The original idea of this optimization belongs to Luke Wagner and this work is hard to even imagine without great support, help and reviews from Mozilla engineer Lars Hansen. Actually it was him who fixed the last bug to make this optimization alive. As always I want to say thanks to my Igalia colleague Andy Wingo for supporting and helping with many ideas for this optimization, check his <a href="http://wingolog.org/">amazing blog</a>.</p>
+<p>Also, I want to say thanks to all Mozilla engineers for the friendly environment and help with this stuff: Benjamin Bouver for fixing the bug in register allocator, Chris Fallin for updating Cranelift ABI, Julian Seward for pieces of advice with stack maps.</p>
+<h2 id="conclusion-and-the-future">Conclusion and the future</h2>
+<p>Speedup is about <code>30%</code> and this is great, but at the same time we pessimized truly external cases and use more memory for allocating decorators.</p>
+<p>But this is all about internal stuff, what you as wasm user can take away from this post? Well, if you are going to use <em>call_indirect</em> then use as many private tables as you can and try to minimize the number of truly external calls. Also, don’t make your tables marked exported without real sharing it between modules because in this case the optimization can’t be applied.</p>
+<p>BTW, this technique can be also applied to optimize <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1709578">null checks for call_indirect</a> and new <em>call_ref</em> instruction from the <a href="https://github.com/WebAssembly/function-references">typed function references proposal</a>.</p>
+<p>Hope this was an interesting reading, happy hacking and see you next time.</p>
+
+  </div>
+
+	
+
+  <div class="pagination">
+  	
+		<a href="#" class="top">Top</a>
+		<a href="https://dbezhetskov.dev/blog/spidermonkey-wasi/" class="right arrow">&#8594;</a>
+  </div>
+
+  </main>
+</body>
+</html>

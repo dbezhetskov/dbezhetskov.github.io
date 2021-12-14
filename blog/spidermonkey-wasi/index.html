@@ -153,16 +153,16 @@ We want to check both limits of the stack - the higher one and the low one. To a
 <p>SpiderMonkey in turn will check underflows from the other side via Stack Base that is equal to the size of the stack.</p>
 <h2 id="over-recursion-handle-webassembly-stack-pointer">Over-recursion: handle WebAssembly stack pointer</h2>
 <p>Some C++ functions that implement JavaScript API may not touch any linear memory and may have very deep nesting. For example this trivial C++ function won’t use any emulated stack at all:</p>
-<pre data-lang="cpp" class="language-cpp "><code class="language-cpp" data-lang="cpp">int foo(int a, int b) {
-   return a + b;
-}
-</code></pre>
-<pre data-lang="cpp" class="language-cpp "><code class="language-cpp" data-lang="cpp">foo(int, int):
-       local.get       1
-       local.get       0
-       i32.add
-       end_function
-</code></pre>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span style="color:#877611;">int </span><span style="color:#a15001;">foo</span><span>(</span><span style="color:#877611;">int </span><span style="color:#696989;">a</span><span>, </span><span style="color:#877611;">int </span><span style="color:#696989;">b</span><span>) {
+</span><span>   </span><span style="color:#016692;">return</span><span> a </span><span style="color:#016692;">+</span><span> b;
+</span><span>}
+</span></code></pre>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span style="color:#696989;">foo</span><span>(</span><span style="color:#877611;">int</span><span>, </span><span style="color:#877611;">int</span><span>)</span><span style="color:#016692;">:
+</span><span>       local.</span><span style="color:#696989;">get       </span><span style="color:#8c008a;">1
+</span><span>       local.</span><span style="color:#696989;">get       </span><span style="color:#8c008a;">0
+</span><span>       i32.</span><span style="color:#696989;">add
+</span><span>       end_function
+</span></code></pre>
 <p>So, some of SpiderMonkey’s functions that implements Javascript API, for example Regexp, may not use and not fully use the emulated in linear memory stack pointer, but we want to handle over-recursion for this type of function too. Thus a manual RAII based autorecursion limiter was added - <a href="https://phabricator.services.mozilla.com/D111813">https://phabricator.services.mozilla.com/D111813</a>. Objects of this class count how many times we have entered into a particular C++ function and will report over-recursion when we reach the predefined limit.</p>
 <h2 id="ci-build">CI Build</h2>
 <p>After all our exercises and workarounds, SpiderMonkey.wasm passed all tests and kind people from Mozilla agreed to setup CI build to check if something went wrong- <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1710358">https://bugzilla.mozilla.org/show_bug.cgi?id=1710358</a>. At the moment of writing the build is green and the WASI target is considered to be a <a href="https://firefox-source-docs.mozilla.org/contributing/build/supported.html#tier-2-targets">Tier 2 platform</a> for upstream SpiderMonkey.</p>
@@ -180,7 +180,7 @@ We want to check both limits of the stack - the higher one and the low one. To a
 	
 
   <div class="pagination">
-  	
+  	<a href="https://dbezhetskov.dev/blog/opt-ind-call/" class="left arrow">&#8592;</a>
 		<a href="#" class="top">Top</a>
 		
   </div>
