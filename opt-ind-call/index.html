@@ -41,8 +41,6 @@
 
 
 
-  <link rel="prev" href="https://dbezhetskov.dev/blog/spidermonkey-wasi/">
-
 
 
 
@@ -197,15 +195,15 @@
 <p>Much better, isn’t it? In general if the table isn’t exported or imported and we are calling a local function then we could use the simplified scheme. But how do we know at runtime that we are going to call a local function or an external one? We can’t just insert ifs and spoil our straightforward code for the local case.</p>
 <h2 id="uniform-representation-for-call-indirect-and-decorators">Uniform representation for <em>call_indirect</em> and decorators</h2>
 <p>To achieve the desired code we can’t emit more assembly instructions at the call site and so, the only way to do this is to modify the functions that we are calling. Here decorators come. So, instead of calling function Bar we will call a new function <code>Decorator(Bar)</code> that will change the state on callee behalf and call the original function.</p>
-<p><img src="/blog/opt_ind_call/decorator_1.jpg" alt="conservative approach vs decorators" /></p>
+<p><img src="/opt_ind_call/decorator_1.jpg" alt="conservative approach vs decorators" /></p>
 <p>The remaining piece of puzzle is when we should decorate our functions? Well, there is only one perfect time to do this - when we are initializing tables. More precisely, when we are populating a table with given functions we know all the information. We know what is the source of the function and whether it is imported or not and so, we can create these decorators at instantiate time and then replace table entries from pointers to functions to pointers to decorators.</p>
-<p><img src="/blog/opt_ind_call/decorator_2.jpg" alt="table and decorators" /></p>
+<p><img src="/opt_ind_call/decorator_2.jpg" alt="table and decorators" /></p>
 <p>In the current scheme we actually introduced one interstitial jump to the decorator and so we made call_indirect actually slower than it was before. But, thankfully to our observation in the previous paragraph we can replace pointer to decorator with pointer to raw function’s code if we know that this function is local and the table is private. You can see in the picture above that Bar isn’t decorated because it is local. Our scheme for local case will look like this:</p>
-<p><img src="/blog/opt_ind_call/decorator_3.jpg" alt="conservative approach vs decorators + opt" /></p>
+<p><img src="/opt_ind_call/decorator_3.jpg" alt="conservative approach vs decorators + opt" /></p>
 <p>And this is actually what we want - for local functions we don’t need to pay for any switching. Of course, this approach will slow down the cross-instance calls but, as I said previously, call_indirect of local functions are a really frequent case for current wasm state.</p>
 <h2 id="results">Results</h2>
 <p>Let’s do some measurements, but first let me introduce you with the micro benchmarks. We are going to measure the total amount of time that call_indirect will take for a local target and for an external one. Target functions are intentionally made simple not to introduce unnecessary delays. The benchmark can be found <a href="https://bugzilla.mozilla.org/attachment.cgi?id=9159323">here</a>. JFYI, the results have been obtained via not very modern core i7 laptop with 16Gb of RAM.</p>
-<p><img src="/blog/opt_ind_call/results.jpg" alt="results" /></p>
+<p><img src="/opt_ind_call/results.jpg" alt="results" /></p>
 <p>So, the main point here is that external calls become slower <code>+18%</code> because of the interstitial jump to the decorator but internal calls become much faster <code>-30%</code>. A good tradeoff, isn’t it?</p>
 <p>Of course this is an artificial benchmark and the actual speedup will depend on how many indirect calls you do on your hot paths, but in the <a href="https://bugzilla.mozilla.org/show_bug.cgi?id=1639153#c156">bug</a> you can see that <code>wasm-godot-baseline</code> gets a <code>2%</code> boost already.</p>
 <h2 id="special-thanks-section">Special thanks section</h2>
@@ -224,7 +222,7 @@
   <div class="pagination">
   	
 		<a href="#" class="top">Top</a>
-		<a href="https://dbezhetskov.dev/blog/spidermonkey-wasi/" class="right arrow">&#8594;</a>
+		
   </div>
 
   </main>

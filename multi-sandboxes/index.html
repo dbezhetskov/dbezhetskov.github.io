@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  
+<title>Multi-cage mode and multiple sandboxes | Dmitry Bezhetskov</title>
+
+
+
+<meta property="og:title" content="Multi-cage mode and multiple sandboxes">
+
+
+
+<meta name="author" content="Dmitry Bezhetskov">
+
+
+<meta property="og:locale" content="en_US">
+
+
+
+
+<link rel="canonical" href="https://dbezhetskov.dev/blog/multi-sandboxes/">
+<meta property="og:url" content="https://dbezhetskov.dev/blog/multi-sandboxes/">
+
+
+
+<meta property="og:site_name" content="Dmitry Bezhetskov" />
+
+
+
+  <meta property="og:image" content="https://dbezhetskov.dev/blog/tale.png">
+  
+  
+
+
+
+  <meta property="og:type" content="article" />
+  <meta property="article:published_time" content="2024-12-30T11:11:00+00:00">
+
+
+
+
+
+
+
+  <meta name="twitter:card" content="summary_large_image"">
+  <meta property="twitter:image" content="https://dbezhetskov.dev/blog/tale.png">
+
+
+
+  <meta property="twitter:title" content="Multi-cage mode and multiple sandboxes">
+
+
+
+
+
+
+
+
+<script type="application/ld+json">
+{
+  "author": {
+    "@type":"Person",
+	  "name":"Dmitry Bezhetskov",
+  },
+  "description": "",
+  "url": "https://dbezhetskov.dev/blog/multi-sandboxes/",
+  "@context":"https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Multi-cage mode and multiple sandboxes"
+  
+    
+    
+      "datePublished":"2024-12-30T11:11:00+00:00",
+    
+    "mainEntityOfPage":{
+      "@type":"WebPage",
+      "@id":"https://dbezhetskov.dev/blog/multi-sandboxes/"
+    },
+  
+}
+</script>
+
+  <link rel="stylesheet" href="https://dbezhetskov.dev/blog/main.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="https://dbezhetskov.dev/blog/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://dbezhetskov.dev/blog/assets/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://dbezhetskov.dev/blog/assets/apple-touch-icon.png">
+
+  
+
+  
+
+  
+  
+</head>
+
+<body>
+  
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="https://dbezhetskov.dev/blog">
+        <h2 class="nav-title">Dmitry Bezhetskov</h2>
+      </a>
+      <ul>
+        
+          
+            <li><a href="https://dbezhetskov.dev/blog">Posts</a></li>
+          
+            <li><a href="https://dbezhetskov.dev/blog/about">About</a></li>
+          
+        
+      </ul>
+    </div>
+  </nav>
+  
+
+  <main>
+    
+  <div class="post">
+  	<h1 class="post-title">Multi-cage mode and multiple sandboxes</h1>
+  	<div class="post-line"></div>
+  	<h1 id="multi-cage-mode-and-multiple-sandboxes">Multi-cage mode and multiple sandboxes</h1>
+<p>Hello colleagues, recently I’ve been working on some interesting parts of V8 and I want to announce this work to the public because it could be useful for deno, node, and other folks who are working with V8 embedding.</p>
+<h2 id="pointer-compression-problems">Pointer compression problems</h2>
+<p>So, let’s imagine that you are using V8 to execute JS on the server side, and let’s say you handle HTTP requests. Each request is some JS code and so, to handle it you start a new V8 isolate (or use an existing one) and execute the request’s code in that isolate. When there are only a few clients there is no problem but when the number of clients is becoming bigger you naturally want to reduce memory consumption of all requests.</p>
+<p>You start searching and there is already an answer for that in V8 - <a href="https://v8.dev/blog/pointer-compression">pointer compression</a>. In general, pointer compression allows you to save up to 50% of memory and speed up GC but there is a limitation - pointer compression limits the V8 heap to a maximum of 4 gigabytes. By the way, V8 uses the special term for this shared between all isolate heaps space, it is called <em>a pointer cage</em> (pic. 1), and this mode of V8 is correspondingly called the <em>shared-cage</em> mode.</p>
+<p><img src="/multiple_sandboxes/pointer_cage.jpg" alt="Pic 1. Pointer cage" /></p>
+<p>If each request uses 2 megabytes of heap, V8’s pointer compression would limit you to being able to handle only 2048 isolates at the same time in one process. Obviously, this number is not promising so folks just don’t use pointer compression and can’t obtain any value from it. In Chromium this isn’t a problem because one isolate corresponds to one tab and one process so 4Gb for one tab is completely ok. But what if we could relax this limitation and get all the benefits of pointer compression?</p>
+<h2 id="isolate-groups">Isolate groups</h2>
+<p>The answer is - isolate groups or the so-called multi-cage mode. So, we can’t extend the limit of 4GB, however, there are some ways to make it 8GB but 8GB is not acceptable too because we want to allocate as much memory as we have without limits. Since each request consumes far less memory than 4Gb and they are all independent we could add an ability to allocate more pointer cages. If we had this ability to create new pointer cages we could still use pointer compression and save memory but at the same time, we could allocate as many cages as we want. So, we added this ability to V8 and it is called multi-cage mode.</p>
+<p>On the API level, we introduced a new entity inside the V8 ecosystem - an isolate group. An isolate group represents one independent pointer cage where you can allocate all your isolates. The API looks like this:</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>v8::IsolateGroup group </span><span style="color:#016692;">= </span><span>v8::IsolateGroup::</span><span style="color:#696989;">Create</span><span>();
+</span><span>v8::Isolate</span><span style="color:#016692;">*</span><span> isolate </span><span style="color:#016692;">= </span><span>v8::Isolate::</span><span style="color:#696989;">New</span><span>(group, create_params);
+</span></code></pre>
+<br/>
+<p>The introduction of isolate groups relaxes the limitation for 4Gb because now one can allocate as many isolate groups per single process as one wants and each group will use pointer compression.</p>
+<p><img src="/multiple_sandboxes/isolate_groups.jpg" alt="Pic 2. Isolate groups" /></p>
+<p>Isolate groups extend V8’s API in a compatible way by introducing an implicit default isolate group. These two lines are therefore equivalent:</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>v8::Isolate</span><span style="color:#016692;">*</span><span> isolate </span><span style="color:#016692;">= </span><span>v8::Isolate::</span><span style="color:#696989;">New</span><span>(create_params);
+</span><span>v8::Isolate</span><span style="color:#016692;">*</span><span> isolate </span><span style="color:#016692;">= </span><span>v8::Isolate::</span><span style="color:#696989;">New</span><span>(IsolateGroup::</span><span style="color:#696989;">GetDefault</span><span>(), create_params);
+</span></code></pre>
+<br/>
+<p>In this way, embedders can write code that is agnostic with regards to the various configurations of V8: shared-cage, multi-cage and configurations without pointer compression.</p>
+<h2 id="security">Security</h2>
+<p>Some time after introducing pointer compression the V8 team introduced <a href="https://v8.dev/blog/sandbox">the sandbox</a>, a security feature based on pointer compression.  The sandbox is a terabyte of virtual memory that stores the V8 heap pointer cage as well as backing stores for WebAssembly memories and ArrayBuffers. References to sandboxed objects are replaced with offsets from the base; the idea is pretty similar to the pointer compression.</p>
+<p>One of the main ideas of the sandbox is to ban all native pointers from the cage so hackers like you can’t corrupt memory outside of the sandbox. In practice, it means that if you want to obtain a native pointer to some C++ object from your JS object you need to go through a special security border - <a href="https://docs.google.com/document/d/1V3sxltuFjjhp_6grGHgfqZNK57qfzGzme0QTk0IXDHk/">external pointer tables</a> to translate offset from sandbox to the real address.</p>
+<h2 id="multiple-sandboxes">Multiple sandboxes</h2>
+<p>So, the sandbox is based on pointer compression and shared-cage mode and therefore can’t be used in multi-cage mode. At the same time, it is a cool security feature and it will be nice to have it for multi-cage mode too. Our isolate groups work enables this use case by arranging that <a href="https://issues.chromium.org/issues/342905186">each isolate group get its own sandbox</a>.</p>
+<p>However, there is one limitation, since the sandbox is huge by default (1 TB!), you can’t allocate many of them per process because of limited virtual address space. Therefore heavy users of multiple sandboxes may need to use a compile-time <a href="https://source.chromium.org/chromium/chromium/src/+/main:v8/include/v8-internal.h;l=243;bpv=1;bpt=1?q=kSandboxSize&amp;ss=chromium">parameter</a> that controls the default size of the sandbox. By reducing sandbox size alongside limiting the maximum index for ArrayBuffers you can archive full security properties of the sandbox with the needed amount of sandboxes per process.</p>
+<p>The API for creating isolates is the staying the same only behaviour of V8 is changed - each time you allocate a new isolate group with enabled sandbox a new sandbox will be allocated. The only new thing is that you can now obtain sandbox from isolate group:</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>v8::IsolateGroup group </span><span style="color:#016692;">= </span><span>v8::IsolateGroup::</span><span style="color:#696989;">Create</span><span>();
+</span><span>group-&gt;</span><span style="color:#696989;">GetSandbox</span><span>();
+</span></code></pre>
+<br/>
+<h2 id="summary">Summary</h2>
+<p>To sum up, now with the introduction of isolate groups and sandbox support V8 embedders could enjoy pointer compression alongside all the benefits of the newly added sandbox feature.</p>
+<p>You can use it with the following gn args:</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>v8_enable_sandbox </span><span style="color:#016692;">= </span><span style="color:#333366;">true
+</span><span>v8_enable_pointer_compression </span><span style="color:#016692;">= </span><span style="color:#333366;">true
+</span><span>v8_enable_pointer_compression_shared_cage </span><span style="color:#016692;">= </span><span style="color:#333366;">false
+</span></code></pre>
+<br/>
+<h2 id="special-thanks-section">Special thanks section</h2>
+<p>This work was sponsored and motivated by <a href="https://www.cloudflare.com/">Cloudflare</a>, in particular by <a href="https://github.com/jasnell">James M Snell</a>, <a href="https://github.com/kentonv">Kenton Varda</a>, <a href="https://github.com/erikcorry">Eric Corry</a> and co.</p>
+<p>Implementation was done by the <a href="https://www.igalia.com/">Igalia</a> compiler team, in particular by <a href="https://wingolog.org/">Andy Wingo</a> and me.</p>
+
+  </div>
+
+	
+
+  <div class="pagination">
+  	
+		<a href="#" class="top">Top</a>
+		
+  </div>
+
+  </main>
+</body>
+</html>

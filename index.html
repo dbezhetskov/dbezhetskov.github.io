@@ -1,79 +1,151 @@
-<html>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
-    <meta content="utf-8" http-equiv="encoding">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  
+<title>Home | Dmitry Bezhetskov</title>
+
+
+
+<meta property="og:title" content="Home">
+
+
+
+<meta name="author" content="Dmitry Bezhetskov">
+
+
+<meta property="og:locale" content="en_US">
+
+
+
+
+<link rel="canonical" href="https://dbezhetskov.dev/blog/">
+<meta property="og:url" content="https://dbezhetskov.dev/blog/">
+
+
+
+<meta property="og:site_name" content="Dmitry Bezhetskov" />
+
+
+
+  <meta property="og:image" content="https://dbezhetskov.dev/blog/tale.png">
+  
+  
+
+
+
+
+
+
+
+
+
+  <meta name="twitter:card" content="summary_large_image"">
+  <meta property="twitter:image" content="https://dbezhetskov.dev/blog/tale.png">
+
+
+
+  <meta property="twitter:title" content="Home">
+
+
+
+
+
+
+
+
+<script type="application/ld+json">
+{
+  "author": {
+    "@type":"Person",
+	  "name":"Dmitry Bezhetskov",
+  },
+  "description": "",
+  "url": "https://dbezhetskov.dev/blog/",
+  "@context":"https://schema.org",
+  "@type": "WebSite",
+  "headline": "Home"
+  
+}
+</script>
+
+  <link rel="stylesheet" href="https://dbezhetskov.dev/blog/main.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="https://dbezhetskov.dev/blog/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://dbezhetskov.dev/blog/assets/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://dbezhetskov.dev/blog/assets/apple-touch-icon.png">
+
+  
+
+  
+
+  
+  
 </head>
 
 <body>
-    <div style="text-align:center;">
-        <canvas id="battlefield-canvas" width="800" height="800" style="border:1px solid #000000;"></canvas>
+  
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="https://dbezhetskov.dev/blog">
+        <h2 class="nav-title">Dmitry Bezhetskov</h2>
+      </a>
+      <ul>
+        
+          
+            <li><a href="https://dbezhetskov.dev/blog">Posts</a></li>
+          
+            <li><a href="https://dbezhetskov.dev/blog/about">About</a></li>
+          
+        
+      </ul>
     </div>
-    <input type="file" id="inputWasm" />
-    <script src="robot-battle.js"></script>
-    <script src="canvas-render.js"></script>
-    <script>
-        const inputElement = document.getElementById("inputWasm");
-        inputElement.addEventListener("change", handleFile, false);
-        function handleFile() {
-            const wasmFile = this.files[0];
-            const wasmURL = window.URL.createObjectURL(wasmFile);
-            initializeWasm(wasmURL).then(main);
-        }
+  </nav>
+  
 
-        async function initializeWasm(wasmURL) {
-            const fetchPromise = fetch(wasmURL);
-            const { instance } = await WebAssembly.instantiateStreaming(fetchPromise);
-            return instance;
-        }
+  <main>
+    
 
-        function main(instance) {
-            const numRows = 20;
-            const numColumns = 20;
-            const strategyFirst = () => { return instance.exports.whatToDo(); }
-            const strategySecond = () => { return game.actions.doNothing; }
-            const game = new RobotGame(numRows,
-                numColumns,
-                strategyFirst,
-                strategySecond,
-                instance.exports.memory,
-                instance.exports.getAddressOfData());
-            game.setupPlayer();
-            game.setupEnemy();
+	<div class="catalogue">
+		<a href="https://dbezhetskov.dev/blog/multi-sandboxes/" class="catalogue-item">
+  <div>
+    <time datetime="2024-12-30T11:11:00+00:00" class="catalogue-time">December 30, 2024</time>
+    <h1 class="catalogue-title">Multi-cage mode and multiple sandboxes</h1>
+    <div class="catalogue-line"></div>
+    <p>Multi-cage mode and multiple sandboxes
+Hello colleagues, recently I’ve been working on some interesting parts of V8 and I want to announce this work to the public because it could be useful for deno, node, and other folks who are working with V8 embedding.
+Pointer compression pro…</p>
+  </div>
+</a><a href="https://dbezhetskov.dev/blog/opt-ind-call/" class="catalogue-item">
+  <div>
+    <time datetime="2021-12-13T11:11:00+00:00" class="catalogue-time">December 13, 2021</time>
+    <h1 class="catalogue-title">Optimization of Wasm’s indirect calls for SpiderMonkey</h1>
+    <div class="catalogue-line"></div>
+    <p><p>Hello hackers, part of last year and part of this year I was working on some cool optimization for Wasm <em>call_indirect</em> instruction in SpiderMonkey and recently it was finally landed. So, grab some food and let me share this story with you.</p>
 
-            const canvas = document.getElementById("battlefield-canvas");
-            const render = new CanvasRender(canvas, game);
-            render.render();
+      </p>
+  </div>
+</a><a href="https://dbezhetskov.dev/blog/spidermonkey-wasi/" class="catalogue-item">
+  <div>
+    <time datetime="2021-08-01T11:11:00+00:00" class="catalogue-time">August  1, 2021</time>
+    <h1 class="catalogue-title">Adventures in porting SpiderMonkey to the WASI WebAssembly platform</h1>
+    <div class="catalogue-line"></div>
+    <p><p>Hello hackers, today we are about to go on a trip into the world of C++ and WebAssembly. Recently I have been lucky enough to participate in porting such a big and complex codebase as SpiderMonkey to the WASI platform. I want to share with you some of that experience.</p>
 
-            const speed = 500;
-            var timer = setInterval(() => {
-                let state = game.getState();
-                if (state != game.gameStates.InProgress) {
-                    switch (state) {
-                        case game.gameStates.Victory: {
-                            alert("VICTORY, what a battle");
-                            break;
-                        }
-                        case game.gameStates.Defeat: {
-                            alert("DEFEAT, try again");
-                            break;
-                        }
-                        case game.gameStates.Draw: {
-                            alert("DRAW, what a mess");
-                            break;
-                        }
-                        default: {
-                            throw new Error("unknown game state");
-                        }
-                    }
-                    clearInterval(timer);
-                    return;
-                }
-                game.doStep();
-                render.render();
-            }, speed);
-        }
-    </script>
+      </p>
+  </div>
+</a>
+	</div>
+	<div class="pagination">
+		
+		
+		
+	</div>
+
+
+  </main>
 </body>
-
 </html>
