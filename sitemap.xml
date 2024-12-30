@@ -1,34 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
+        <loc>https://dbezhetskov.dev/</loc>
+    </url>
+    <url>
+        <loc>https://dbezhetskov.dev/about/</loc>
+    </url>
+    <url>
         <loc>https://dbezhetskov.dev/blog/</loc>
     </url>
     <url>
-        <loc>https://dbezhetskov.dev/blog/about/</loc>
-    </url>
-    <url>
-        <loc>https://dbezhetskov.dev/blog/blog/</loc>
-    </url>
-    <url>
-        <loc>https://dbezhetskov.dev/blog/blog/first-post/</loc>
+        <loc>https://dbezhetskov.dev/blog/first-post/</loc>
         <lastmod>2021-05-01T18:18:18+00:00</lastmod>
-    </url>
-    <url>
-        <loc>https://dbezhetskov.dev/blog/blog/page/1/</loc>
-    </url>
-    <url>
-        <loc>https://dbezhetskov.dev/blog/multi-sandboxes/</loc>
-        <lastmod>2024-12-30T11:11:00+00:00</lastmod>
-    </url>
-    <url>
-        <loc>https://dbezhetskov.dev/blog/opt-ind-call/</loc>
-        <lastmod>2021-12-13T11:11:00+00:00</lastmod>
     </url>
     <url>
         <loc>https://dbezhetskov.dev/blog/page/1/</loc>
     </url>
     <url>
-        <loc>https://dbezhetskov.dev/blog/spidermonkey-wasi/</loc>
+        <loc>https://dbezhetskov.dev/multi-sandboxes/</loc>
+        <lastmod>2024-12-30T11:11:00+00:00</lastmod>
+    </url>
+    <url>
+        <loc>https://dbezhetskov.dev/opt-ind-call/</loc>
+        <lastmod>2021-12-13T11:11:00+00:00</lastmod>
+    </url>
+    <url>
+        <loc>https://dbezhetskov.dev/page/1/</loc>
+    </url>
+    <url>
+        <loc>https://dbezhetskov.dev/spidermonkey-wasi/</loc>
         <lastmod>2021-08-01T11:11:00+00:00</lastmod>
     </url>
 </urlset>
