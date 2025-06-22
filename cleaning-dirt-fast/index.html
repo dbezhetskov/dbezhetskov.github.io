@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  
+<title>Notes on CoW mappings | Dmitry Bezhetskov</title>
+
+
+
+<meta property="og:title" content="Notes on CoW mappings">
+
+
+
+<meta name="author" content="Dmitry Bezhetskov">
+
+
+<meta property="og:locale" content="en_US">
+
+
+
+
+<link rel="canonical" href="https://dbezhetskov.dev/cleaning-dirt-fast/">
+<meta property="og:url" content="https://dbezhetskov.dev/cleaning-dirt-fast/">
+
+
+
+<meta property="og:site_name" content="Dmitry Bezhetskov" />
+
+
+
+  <meta property="og:image" content="https://dbezhetskov.dev/tale.png">
+  
+  
+
+
+
+  <meta property="og:type" content="article" />
+  <meta property="article:published_time" content="2025-06-22T11:11:00+00:00">
+
+
+
+
+
+
+
+  <meta name="twitter:card" content="summary_large_image"">
+  <meta property="twitter:image" content="https://dbezhetskov.dev/tale.png">
+
+
+
+  <meta property="twitter:title" content="Notes on CoW mappings">
+
+
+
+
+
+
+
+
+<script type="application/ld+json">
+{
+  "author": {
+    "@type":"Person",
+	  "name":"Dmitry Bezhetskov",
+  },
+  "description": "",
+  "url": "https://dbezhetskov.dev/cleaning-dirt-fast/",
+  "@context":"https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Notes on CoW mappings"
+  
+    
+    
+      "datePublished":"2025-06-22T11:11:00+00:00",
+    
+    "mainEntityOfPage":{
+      "@type":"WebPage",
+      "@id":"https://dbezhetskov.dev/cleaning-dirt-fast/"
+    },
+  
+}
+</script>
+
+  <link rel="stylesheet" href="https://dbezhetskov.dev/main.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Libre+Baskerville:400,400i,700">
+
+  <link rel="icon" type="image/png" sizes="32x32" href="https://dbezhetskov.dev/assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="https://dbezhetskov.dev/assets/favicon-16x16.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="https://dbezhetskov.dev/assets/apple-touch-icon.png">
+
+  
+
+  
+
+  
+  
+</head>
+
+<body>
+  
+  <nav class="nav">
+    <div class="nav-container">
+      <a href="https://dbezhetskov.dev/">
+        <h2 class="nav-title">Dmitry Bezhetskov</h2>
+      </a>
+      <ul>
+        
+          
+            <li><a href="https://dbezhetskov.dev">Posts</a></li>
+          
+            <li><a href="https://dbezhetskov.dev/about">About</a></li>
+          
+        
+      </ul>
+    </div>
+  </nav>
+  
+
+  <main>
+    
+  <div class="post">
+  	<h1 class="post-title">Notes on CoW mappings</h1>
+  	<div class="post-line"></div>
+  	<p>Hello, hackers! I’m currently working on a cool project: <a href="https://docs.google.com/document/d/1nyXhbrLZUVX0sREHhbwmrE8b_786lfUJA2s2t64jtFM">Fast isolate cloning</a>. In short, it’s a new V8 feature that quickly instantiates fresh isolates by cloning existing ones. While developing it, I explored and tested several strategies for maintaining and cleaning copy-on-write (CoW) memory mappings. I’d like to share the results of this subtask with you — both to save you time on similar problems in the future and, of course, for a bit of technical entertainment.</p>
+<h2 id="the-cloning-problem">The cloning problem</h2>
+<p>First, let’s define the model. Imagine a single, contiguous block of memory - we will call it the pointer cage. Within this cage are N contiguous sub-intervals.</p>
+<p><img src="/cleaning_dirt_fast/pointer_cage.jpg" alt="Pic 1. Pointer cage" /></p>
+<p>My goal is to create a CoW clone of a pointer cage, including all its sub-intervals. After cloning, I’ll have two pointer cages that share the same physical memory pages.</p>
+<p><img src="/cleaning_dirt_fast/cow_mapping.png" alt="Pic 2. CoW mapping" /></p>
+<p>Next, I need to run N requests against the cloned pointer cage. Each request takes a fresh interval within the clone and modifies only a small fraction of its memory - about 20 % of that interval’s virtual pages, which matches what I see in practice. When the request finishes, the interval must be restored to its original, unmodified state.</p>
+<p><img src="/cleaning_dirt_fast/request.png" alt="Pic 3. CoW mapping" /></p>
+<p>Think of the cloned pointer cage as a pool of intervals. Each request checks out an interval from the pool, modifies it, and then returns it when finished. In the demo code, it looks like this:</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>Pool </span><span style="color:#a15001;">pool</span><span>(</span><span style="color:#696989;">original_mapping_base_address</span><span>);
+</span><span style="color:#898989;">// Client request code
+</span><span style="color:#877611;">auto</span><span> interval </span><span style="color:#016692;">=</span><span> pool-&gt;</span><span style="color:#696989;">GetInterval</span><span>();
+</span><span style="color:#696989;">ModifyInterval</span><span>(interval);
+</span><span>pool.</span><span style="color:#696989;">FreeInterval</span><span>(interval);
+</span></code></pre>
+<br/>
+<p>Now we can spell out the objective: build a system that runs N requests concurrently while keeping the total processing time as low as possible. Concretely, we need to implement the Pool class so that it handles all parallel requests in the shortest time.</p>
+<p>We’ll lean on the OS’s copy-on-write support and let the kernel do most of the heavy lifting. Linux offers two main CoW paths: using <code>fork</code>, or using memory-backed files. Because we don’t need a separate process, <code>fork</code> isn’t a good fit. Instead, we create an anonymous, memory-backed file with <code>memfd_create</code>, map the original pointer cage into it, and later open a private, CoW view of that file via <code>mmap</code> with the <code>MAP_PRIVATE</code> flag:
+<br/></p>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span style="color:#877611;">int</span><span> fd </span><span style="color:#016692;">= </span><span style="color:#696989;">memfd_create</span><span>(</span><span style="color:#016692;">...</span><span>);
+</span><span style="color:#696989;">ftruncate</span><span>(fd, size);
+</span><span style="color:#877611;">void</span><span style="color:#016692;">*</span><span> original_mapping_base_address </span><span style="color:#016692;">= </span><span style="color:#696989;">mmap</span><span>(MAP_SHARED, fd);
+</span><span style="color:#696989;">FillOriginalPointerCage</span><span>(original_mapping_base_address);
+</span><span style="color:#877611;">void</span><span style="color:#016692;">*</span><span> clone </span><span style="color:#016692;">= </span><span style="color:#696989;">mmap</span><span>(MAP_PRIVATE, fd, </span><span style="color:#8c008a;">0</span><span>);
+</span></code></pre>
+<br/>
+<p>This setup will be our baseline for the discussion — there aren’t many alternative ways to approach it. Still, there are several strategies for implementing GetInterval and FreeInterval, so let’s dive in.</p>
+<h2 id="solution-1-full-reset">Solution 1: full reset</h2>
+<p>The simplest approach is to make FreeInterval a no-op and let intervals remain “dirty” for a while. When no clean intervals are left, we reset the entire cloned pointer cage to its original state - assuming no clients are still using it.</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>Pool </span><span style="color:#a15001;">pool</span><span>(</span><span style="color:#696989;">original_mapping_base_address</span><span>);
+</span><span style="color:#696989;">ExecuteClientsRequests</span><span>(</span><span style="color:#016692;">&amp;</span><span>pool, </span><span style="color:#333366;">kNumberOfClients</span><span>);
+</span><span>pool.</span><span style="color:#696989;">FullReset</span><span>();
+</span><span>
+</span><span>GetInterval</span><span style="color:#016692;">:
+</span><span>	</span><span style="color:#696989;">assert</span><span>(</span><span style="color:#016692;">!</span><span>intervals_stack.</span><span style="color:#696989;">empty</span><span>());
+</span><span>       </span><span style="color:#877611;">auto</span><span> interval </span><span style="color:#016692;">=</span><span> intervals_stack.</span><span style="color:#696989;">top</span><span>();
+</span><span>	intervals_stack.</span><span style="color:#696989;">pop</span><span>();
+</span><span>	</span><span style="color:#016692;">return</span><span> interval;
+</span><span>
+</span><span style="color:#696989;">FreeInterval</span><span>(interval)</span><span style="color:#016692;">: </span><span style="color:#898989;">/*do nothing*/
+</span></code></pre>
+<br/>
+<p>To wipe all modifications from every interval in one shot, we can lean on the OS. When a client writes to a private page inside the cloned pointer cage, the kernel allocates a new physical page to protect the original and keeps track of both pages. We can then tell the kernel to discard those private copies and revert to the originals with <code>madvise(..., MADV_DONTNEED)</code>. Despite the name, <code>madvise</code> here isn’t merely a suggestion - it’s an immediate command that frees the dirty pages from our cloned cage. (There’s a <a href="https://www.youtube.com/watch?v=bg6-LVCHmGM&amp;t=4011s">fun talk</a> out there on how this counter-intuitive API name came about.)</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span style="color:#696989;">FullReset</span><span>()</span><span style="color:#016692;">:
+</span><span>    </span><span style="color:#696989;">madvise</span><span>(cage_clone_base_, clone_size_, MADV_DONTNEED);
+</span><span>    </span><span style="color:#696989;">RefillIntervalStack</span><span>(); 
+</span></code></pre>
+<br/>
+<p>This approach works well in aggregate: we skip the overhead of freeing individual intervals and release them all at once, so the amortized cost stays low. The catch is that <code>madvise(..., MADV_DONTNEED)</code> flushes the <a href="https://en.wikipedia.org/wiki/Translation_lookaside_buffer">TLB</a>; after a full pool reset, we pay the penalty of accessing uncached data. In addition, every time a client requests an interval the pool hands out a brand-new one, which further hurts cache locality. Ideally, each client would reuse the same interval more frequently.</p>
+<h2 id="solution-2-tracking-madvise">Solution 2: tracking + madvise</h2>
+<p>This time, let’s track exactly which pages each request modifies. On Linux, you can do this by installing a signal handler and making the cloned pointer cage read-only. Whenever a write occurs, the kernel raises a signal; inside the handler, you switch the page to read-write with mprotect and log the page’s address.
+This adds a small overhead - each write now incurs a signal and an extra mprotect - but the payoff is a much more precise FreeInterval. When an interval is released, you call <code>madvise(..., MADV_DONTNEED)</code> only on the pages that were actually changed, instead of flushing the entire cage.</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>GetInterval</span><span style="color:#016692;">: </span><span style="color:#898989;">/*the same*/
+</span><span>
+</span><span style="color:#696989;">FreeInterval</span><span>(interval)</span><span style="color:#016692;">:
+</span><span>    </span><span style="color:#016692;">for </span><span>(</span><span style="color:#877611;">auto</span><span> dirty_page </span><span style="color:#016692;">: </span><span style="color:#696989;">dirt_pages</span><span>(interval)) {
+</span><span>        </span><span style="color:#696989;">madvise</span><span>(dirty_page.</span><span style="color:#696989;">base</span><span>(), </span><span style="color:#333366;">kPageSize</span><span>, MADV_DONTNEED);
+</span><span>    }
+</span><span>    intervals_stack.</span><span style="color:#696989;">push</span><span>(interval);
+</span></code></pre>
+<br/>
+<p>With this approach, intervals are returned to the pool already cleaned, which is a big win. The trade-off is a slightly longer request time: we have to scrub the modified pages and each write incurs an extra mprotect, adding overhead.</p>
+<h2 id="solution-3-tracking-memcpy">Solution 3: tracking + memcpy</h2>
+<p>To improve caching properties and reduce syscall pressure for madvice in FreeInterval we can just mem-copy original data for the original version of interval from the original pointer cage. Yes, it will use more physical memory but should provide a cache friendly solution.</p>
+<br/>
+<pre data-lang="cpp" style="background-color:#ffffff;color:#010101;" class="language-cpp "><code class="language-cpp" data-lang="cpp"><span>GetInterval</span><span style="color:#016692;">: </span><span style="color:#898989;">/* same as in (2) strategy */
+</span><span>
+</span><span style="color:#696989;">FreeInterval</span><span>(interval)</span><span style="color:#016692;">:
+</span><span>    </span><span style="color:#016692;">for </span><span>(</span><span style="color:#877611;">auto</span><span> dirty_page </span><span style="color:#016692;">: </span><span style="color:#696989;">dirt_pages</span><span>(interval)) {
+</span><span>        </span><span style="color:#7a7025;">memcpy</span><span>(dirty_page.</span><span style="color:#696989;">base</span><span>(), dirty_page.</span><span style="color:#696989;">original_base</span><span>(), </span><span style="color:#333366;">kPageSize</span><span>);
+</span><span>    }
+</span><span>    intervals_stack.</span><span style="color:#696989;">push</span><span>(interval);
+</span></code></pre>
+<br/>
+<h2 id="testing-and-results">Testing and results</h2>
+<p>To evaluate all three approaches, I spin up several threads. Each thread repeatedly checks out an interval, performs a request, and returns the interval to the pool. Every thread runs the same number of requests, and each request simply copies a set of virtual pages from one location in the interval to another. I record the total wall-clock time for all requests to compare the strategies. The benchmark code is available <a href="https://github.com/dbezhetskov/cow-tests/tree/main">here</a>. Feel free to pause now and test your systems-programming instincts: which strategy do you think will be the fastest?</p>
+<p><img src="/cleaning_dirt_fast/results.png" alt="Pic 4. Result talbe" /></p>
+<p>As the results show, the simplest approach - plain <code>memcpy</code> is the clear winner. Because the copy happens entirely in user space, it avoids costly kernel crossings and benefits from better cache locality. The trade-off is higher memory usage: duplicated pages remain allocated until you explicitly reclaim them. In real-world code, you’d combine the <code>memcpy</code> strategy with periodic page reclamation to keep the footprint in check.</p>
+<p>So, now you know how to create a CoW mapping and how to fastly clean them to their original state. I hope you enjoyed the reading and had a good time.</p>
+<h2 id="p-s">P.S.</h2>
+<p>This work was sponsored and motivated by <a href="https://www.cloudflare.com/">Cloudflare</a>.</p>
+
+  </div>
+
+	
+
+  <div class="pagination">
+  	
+		<a href="#" class="top">Top</a>
+		
+  </div>
+
+  </main>
+</body>
+</html>
